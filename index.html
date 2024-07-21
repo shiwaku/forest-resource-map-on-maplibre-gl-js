@@ -1,0 +1,818 @@
+<html>
+
+<head>
+    <title>森林資源情報マップ（CS立体図・傾斜区分図・レーザ林相図・樹種ポリゴン・森林資源量集計メッシュ）</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src='https://unpkg.com/maplibre-gl@3.4.1/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@3.4.1/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src="https://unpkg.com/pmtiles@2.10.0/dist/index.js"></script>
+    <!--<script type="module" src="maplibre-gl-gsi-terrain-fast-png.js"></script>-->
+    <style>
+        body {
+            margin: 0;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-overlay {
+            font: bold 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            position: absolute;
+            width: 180px;
+            bottom: 20px;
+            left: 0;
+            padding: 10px;
+        }
+
+        .map-overlay .map-overlay-inner {
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .map-overlay label {
+            display: block;
+            margin: 0 0 0px;
+            font-size: 12px;
+            top: 100px;
+            left: 10px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .map-overlay input {
+            background-color: transparent;
+            display: inline-block;
+            width: 100%;
+            position: relative;
+            margin: 0;
+            cursor: ew-resize;
+        }
+
+        .maplibregl-popup .maplibregl-popup-content {
+            padding: 8px 10px;
+            font: 12px/14px Arial, Helvetica, sans-serif;
+            color: black;
+            background: white;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
+            border-radius: 5px;
+            width: 200px;
+            height: 280px;
+            overflow: scroll;
+        }
+
+        #select-tiles {
+            padding: 3px 4px;
+            font: 12px/14px Arial, Helvetica, sans-serif;
+            color: black;
+            background: white;
+            background: rgba(255, 255, 255, 1.0);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            width: fit-content;
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            z-index: 10;
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 40px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            font: 12px/14px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            padding: 10px;
+            position: absolute;
+            right: 10px;
+            z-index: 1;
+            line-height: 10px;
+            height: auto;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+        }
+
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 15px;
+            margin-right: 10px;
+            width: 15px;
+            color: orangered
+        }
+
+        .square {
+            width: 15px;
+            height: 15px;
+        }
+
+        th,
+        td {
+            border: solid 1px;
+        }
+
+        table {
+            font-size: 8pt;
+            /*width: 250px;*/
+            border-collapse: collapse;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="select-tiles">
+        <label><b>タイルの種類</b></label><br>
+        <select id="tiles">
+            <option value="cs">CS立体図(兵庫県・栃木県・高知県)</option>
+            <option value="slopemap-hyogo">傾斜区分図(兵庫県)</option>
+            <option value="slopemap-tochigi">傾斜区分図(栃木県)</option>
+            <option value="slopemap-kochi">傾斜区分図(高知県)</option>
+            <option value="ls-standtype">レーザ林相図(兵庫県・栃木県・高知県)</option>
+            <option value="tree-specie">樹種ポリゴン(兵庫県・栃木県・高知県)</option>
+            <option value="fr-mesh20m">森林資源量集計メッシュ(兵庫県・栃木県・高知県)</option>
+        </select>
+    </div>
+    <div class="map-overlay top">
+        <div class="map-overlay-inner">
+            <label>タイル 不透明度: <span id="tiles-slider-opacity-value">100%</span></label>
+            <input id="tiles-slider-opacity" type="range" min="0" max="100" step="1" value="100">
+            <label>空中写真 不透明度: <span id="photo-slider-opacity-value">0%</span></label>
+            <input id="photo-slider-opacity" type="range" min="0" max="100" step="0" value="0">
+        </div>
+    </div>
+    <div id="legen-dtree-species" style="display:none;" class='legend'>
+        <h4>樹種ポリゴン</h4>
+        <div class="square" style='background-color: #00cc66; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">スギ</span><br>
+        <div class="square" style='background-color: #99ff66; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">ヒノキ類</span><br>
+        <div class="square" style='background-color: #cc0000; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">マツ類</span><br>
+        <div class="square" style='background-color: #ff9966; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">カラマツ</span><br>
+        <div class="square" style='background-color: #ffcc99; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">トドマツ</span><br>
+        <div class="square" style='background-color: #cc6600; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">エゾマツ</span><br>
+        <div class="square" style='background-color: #cc00cc; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">その他N</span><br>
+        <div class="square" style='background-color: #ffff99; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">クヌギ</span><br>
+        <div class="square" style='background-color: #ff9933; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">ナラ類</span><br>
+        <div class="square" style='background-color: #cc9900; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">ブナ</span><br>
+        <div class="square" style='background-color: #ffff00; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">その他L</span><br>
+        <div class="square" style='background-color: #8000ff; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">タケ</span><br>
+        <div class="square" style='background-color: #8db3e2; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">針広混交林</span><br>
+        <div class="square" style='background-color: #ccff99; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">新植地</span><br>
+        <div class="square" style='background-color: #ff80ff; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">伐採跡地</span><br>
+        <div class="square" style='background-color: #bfbfbf; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">その他</span><br>
+    </div>
+    <div id="legen-fr-mesh20m" style="display:none;" class='legend'>
+        <h4>森林資源量集計ﾒｯｼｭ</h4>
+        <div class="square" style='background-color: #00cc66; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">スギ</span><br>
+        <div class="square" style='background-color: #99ff66; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">ヒノキ類</span><br>
+        <div class="square" style='background-color: #cc0000; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">マツ類</span><br>
+        <div class="square" style='background-color: #ff9966; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">カラマツ</span><br>
+        <div class="square" style='background-color: #ffcc99; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">トドマツ</span><br>
+        <div class="square" style='background-color: #cc6600; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">エゾマツ</span><br>
+        <div class="square" style='background-color: #cc00cc; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">その他N</span><br>
+        <div class="square" style='background-color: #ffff99; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">クヌギ</span><br>
+        <div class="square" style='background-color: #ff9933; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">ナラ類</span><br>
+        <div class="square" style='background-color: #cc9900; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">ブナ</span><br>
+        <div class="square" style='background-color: #ffff00; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">その他L</span><br>
+        <div class="square" style='background-color: #8000ff; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">タケ</span><br>
+        <div class="square" style='background-color: #8db3e2; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">針広混交林</span><br>
+        <div class="square" style='background-color: #ccff99; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">新植地</span><br>
+        <div class="square" style='background-color: #ff80ff; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">伐採跡地</span><br>
+        <div class="square" style='background-color: #bfbfbf; display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">その他</span><br>
+    </div>
+    <div id="legen-slopemap-hyogo" style="display:none;" class='legend'>
+        <h4>傾斜区分図<br>(兵庫県)</h4>
+        <div class="square" style='background-color: rgb(107,171,204); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">20以下</span><br>
+        <div class="square" style='background-color: rgb(179,222,228); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">20-25</span><br>
+        <div class="square" style='background-color: rgb(235,247,197); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">25-30</span><br>
+        <div class="square" style='background-color: rgb(255,222,152); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">30-35</span><br>
+        <div class="square" style='background-color: rgb(252,180,104); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">35-40</span><br>
+        <div class="square" style='background-color: rgb(241,135,83); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">40-45</span><br>
+        <div class="square" style='background-color: rgb(216,62,72); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">45超</span><br>
+    </div>
+    <div id="legen-slopemap-tochigi" style="display:none;" class='legend'>
+        <h4>傾斜区分図<br>(栃木県)</h4>
+        <div class="square" style='background-color: rgb(0,0,254); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">-15.0°</span><br>
+        <div class="square" style='background-color: rgb(84,255,0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">15.0°-30.0°</span><br>
+        <div class="square" style='background-color: rgb(255,255,0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">30.0°-35.0°</span><br>
+        <div class="square" style='background-color: rgb(254,0,0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">35.0°-</span><br>
+    </div>
+    <div id="legen-slopemap-kochi" style="display:none;" class='legend'>
+        <h4>傾斜区分図<br>(高知県)</h4>
+        <div class="square" style='background-color: rgb(0,1,250); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">0以上15未満</span><br>
+        <div class="square" style='background-color: rgb(51,193,255); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">15以上30未満</span><br>
+        <div class="square" style='background-color: rgb(182,255,140); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">30以上40未満</span><br>
+        <div class="square" style='background-color: rgb(255,200,1); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">40以上45未満</span><br>
+        <div class="square" style='background-color: rgb(254,0,0); display: inline-block;'>
+        </div><span style="display: inline-block; margin-left: 5px;">45以上</span><br>
+    </div>
+    <script type="module">
+        // Terrain-RGB形式への変換モジュール
+        import { makeNumPngProtocol } from './numPngProtocol.js'
+
+        // protocolの設定
+        let protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: 'std.json',
+            // style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            zoom: 8.5,
+            minZoom: 1,
+            maxZoom: 23,
+            pitch: 0,
+            bearing: 0,
+            maxPitch: 85,
+            center: [134.8649, 34.9496],
+            hash: true,
+            attributionControl: false
+        });
+
+        // ズーム・回転
+        map.addControl(new maplibregl.NavigationControl());
+
+        // フルスクリーンモードのオンオフ
+        map.addControl(new maplibregl.FullscreenControl());
+
+        // 現在位置表示
+        map.addControl(new maplibregl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: false
+            },
+            fitBoundsOptions: { maxZoom: 18 },
+            trackUserLocation: true,
+            showUserLocation: true
+        }));
+
+        // スケール表示
+        map.addControl(new maplibregl.ScaleControl({
+            maxWidth: 200,
+            unit: 'metric'
+        }));
+
+        // Attributionを折りたたみ表示
+        map.addControl(new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution: '（<a href="https://twitter.com/shi__works" target="_blank">Twitter</a> | <a href="https://github.com/shi-works/forest-resource-map-on-maplibre-gl-js" target="_blank">Github</a>） '
+        }));
+
+        // 3D地形コントロール
+        map.addControl(
+            new maplibregl.TerrainControl({
+                // source: 'gsi-dem',
+                source: 'aist-dem',
+                exaggeration: 1 // 標高を強調する倍率
+            })
+        );
+
+        map.on('load', () => {
+            /*
+            // 地理院 標高タイルDEM
+            map.addSource("gsi-dem", {
+                type: 'raster-dem',
+                tiles: [
+                    // 'gsidem://https://cyberjapandata.gsi.go.jp/xyz/dem_png/{z}/{x}/{y}.png',
+                    'https://x.optgeo.org/et10b/et512/{z}/{x}/{y}.webp',
+                ],
+                attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html#dem" target="_blank">地理院タイル（標高タイル）</a>',
+                tileSize: 512
+            });
+            */
+
+            // 産総研 シームレス標高タイルソース
+            map.addSource("aist-dem", {
+                type: 'raster-dem',
+                tiles: [
+                    'numpng://tiles.gsj.jp/tiles/elev/mixed/{z}/{y}/{x}.png',
+                ],
+                attribution: '<a href="https://tiles.gsj.jp/tiles/elev/tiles.html" target="_blank">産業技術総合研究所 シームレス標高タイル(統合DEM)</a>',
+                tileSize: 256
+            });
+
+            // 地理院 標高タイルDEMセット
+            // map.setTerrain({ 'source': 'gsi-dem', 'exaggeration': 1 });
+
+            // 産総研 シームレス標高タイルセット
+            map.setTerrain({ 'source': 'aist-dem', 'exaggeration': 1 });
+
+            map.showTileBoundaries = false;
+
+        })
+
+        // スライダーで空中写真の不透明度を制御
+        const photosliderOpactiy = document.getElementById('photo-slider-opacity');
+        const photosliderOpactiyValue = document.getElementById('photo-slider-opacity-value');
+
+        photosliderOpactiy.addEventListener('input', (e) => {
+            map.setPaintProperty(
+                'seamlessphoto',
+                'raster-opacity',
+                parseInt(e.target.value, 10) / 100
+            );
+            photosliderOpactiyValue.textContent = e.target.value + '%';
+        });
+
+        // スライダーでタイルの不透明度を制御
+        const tilessliderOpactiy = document.getElementById('tiles-slider-opacity');
+        const tilessliderOpactiyValue = document.getElementById('tiles-slider-opacity-value');
+
+        tilessliderOpactiy.addEventListener('input', (e) => {
+            map.setPaintProperty('hyogo-cs', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('tochigi-cs', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('kochi-cs', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('hyogo-slopemap', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('tochigi-slopemap', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('kochi-slopemap', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('hyogo-ls-standtype', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('tochigi-ls-standtype', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('kochi-ls-standtype', 'raster-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('hyogo-tree-specie', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('tochigi-tree-specie', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('kochi-tree-specie', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('hyogo-fr-mesh20m', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('tochigi-fr-mesh20m', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+            map.setPaintProperty('kochi-fr-mesh20m', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+            tilessliderOpactiyValue.textContent = e.target.value + '%';
+        });
+
+        // イベントリスナーを追加
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('tiles').addEventListener('change', SelectTiles);
+        });
+
+        // タイル切り替え制御
+        function SelectTiles() {
+            // valueを取得
+            var currentLayerName = document.getElementById('tiles').value;
+
+            // 一旦、全レイヤを非表示
+            // CS立体図
+            if (map.getLayer('hyogo-cs')) { map.setLayoutProperty('hyogo-cs', 'visibility', 'none'); }
+            if (map.getLayer('tochigi-cs')) { map.setLayoutProperty('tochigi-cs', 'visibility', 'none'); }
+            if (map.getLayer('kochi-cs')) { map.setLayoutProperty('kochi-cs', 'visibility', 'none'); }
+
+            // 傾斜区分図
+            if (map.getLayer('hyogo-slopemap')) { map.setLayoutProperty('hyogo-slopemap', 'visibility', 'none'); }
+            if (map.getLayer('tochigi-slopemap')) { map.setLayoutProperty('tochigi-slopemap', 'visibility', 'none'); }
+            if (map.getLayer('kochi-slopemap')) { map.setLayoutProperty('kochi-slopemap', 'visibility', 'none'); }
+
+            // レーザ林相図
+            if (map.getLayer('hyogo-ls-standtype')) { map.setLayoutProperty('hyogo-ls-standtype', 'visibility', 'none'); }
+            if (map.getLayer('tochigi-ls-standtype')) { map.setLayoutProperty('tochigi-ls-standtype', 'visibility', 'none'); }
+            if (map.getLayer('kochi-ls-standtype')) { map.setLayoutProperty('kochi-ls-standtype', 'visibility', 'none'); }
+
+            // 樹種ポリゴン
+            if (map.getLayer('hyogo-tree-specie')) { map.setLayoutProperty('hyogo-tree-specie', 'visibility', 'none'); }
+            if (map.getLayer('tochigi-tree-specie')) { map.setLayoutProperty('tochigi-tree-specie', 'visibility', 'none'); }
+            if (map.getLayer('kochi-tree-specie')) { map.setLayoutProperty('kochi-tree-specie', 'visibility', 'none'); }
+
+            // 森林資源量集計メッシュ
+            if (map.getLayer('hyogo-fr-mesh20m')) { map.setLayoutProperty('hyogo-fr-mesh20m', 'visibility', 'none'); }
+            if (map.getLayer('tochigi-fr-mesh20m')) { map.setLayoutProperty('tochigi-fr-mesh20m', 'visibility', 'none'); }
+            if (map.getLayer('kochi-fr-mesh20m')) { map.setLayoutProperty('kochi-fr-mesh20m', 'visibility', 'none'); }
+
+            // レイヤを表示
+            if (currentLayerName === 'cs') {
+                map.setLayoutProperty('hyogo-cs', 'visibility', 'visible');
+                map.setLayoutProperty('tochigi-cs', 'visibility', 'visible');
+                map.setLayoutProperty('kochi-cs', 'visibility', 'visible');
+                map.setPaintProperty('hyogo-cs', 'raster-opacity', 1);
+                map.setPaintProperty('tochigi-cs', 'raster-opacity', 1);
+                map.setPaintProperty('kochi-cs', 'raster-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            } else if (currentLayerName === 'slopemap-hyogo') {
+                map.setLayoutProperty('hyogo-slopemap', 'visibility', 'visible');
+                map.setPaintProperty('hyogo-slopemap', 'raster-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            } else if (currentLayerName === 'slopemap-tochigi') {
+                map.setLayoutProperty('tochigi-slopemap', 'visibility', 'visible');
+                map.setPaintProperty('tochigi-slopemap', 'raster-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            } else if (currentLayerName === 'slopemap-kochi') {
+                map.setLayoutProperty('kochi-slopemap', 'visibility', 'visible');
+                map.setPaintProperty('kochi-slopemap', 'raster-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            } else if (currentLayerName === 'ls-standtype') {
+                map.setLayoutProperty('hyogo-ls-standtype', 'visibility', 'visible');
+                map.setLayoutProperty('tochigi-ls-standtype', 'visibility', 'visible');
+                map.setLayoutProperty('kochi-ls-standtype', 'visibility', 'visible');
+                map.setPaintProperty('hyogo-ls-standtype', 'raster-opacity', 1);
+                map.setPaintProperty('tochigi-ls-standtype', 'raster-opacity', 1);
+                map.setPaintProperty('kochi-ls-standtype', 'raster-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            } else if (currentLayerName === 'tree-specie') {
+                map.setLayoutProperty('hyogo-tree-specie', 'visibility', 'visible');
+                map.setLayoutProperty('tochigi-tree-specie', 'visibility', 'visible');
+                map.setLayoutProperty('kochi-tree-specie', 'visibility', 'visible');
+                map.setPaintProperty('hyogo-tree-specie', 'fill-opacity', 1);
+                map.setPaintProperty('tochigi-tree-specie', 'fill-opacity', 1);
+                map.setPaintProperty('kochi-tree-specie', 'fill-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            } else if (currentLayerName === 'fr-mesh20m') {
+                map.setLayoutProperty('hyogo-fr-mesh20m', 'visibility', 'visible');
+                map.setLayoutProperty('tochigi-fr-mesh20m', 'visibility', 'visible');
+                map.setLayoutProperty('kochi-fr-mesh20m', 'visibility', 'visible');
+                map.setPaintProperty('hyogo-fr-mesh20m', 'fill-opacity', 1);
+                map.setPaintProperty('tochigi-fr-mesh20m', 'fill-opacity', 1);
+                map.setPaintProperty('kochi-fr-mesh20m', 'fill-opacity', 1);
+                map.setPaintProperty('seamlessphoto', 'raster-opacity', 0);
+            }
+
+            // 凡例の表示切り替え
+            if (currentLayerName === 'tree-specie') {
+                // 表示
+                document.querySelector('#legen-dtree-species').style.display = 'block';
+            }
+            else {
+                // 非表示
+                document.querySelector('#legen-dtree-species').style.display = 'none';
+            }
+
+            // 凡例の表示切り替え
+            if (currentLayerName === 'fr-mesh20m') {
+                // 表示
+                document.querySelector('#legen-fr-mesh20m').style.display = 'block';
+            }
+            else {
+                // 非表示
+                document.querySelector('#legen-fr-mesh20m').style.display = 'none';
+            }
+
+            // 凡例の表示切り替え
+            if (currentLayerName === 'slopemap-hyogo') {
+                // 表示
+                document.querySelector('#legen-slopemap-hyogo').style.display = 'block';
+            }
+            else {
+                // 非表示
+                document.querySelector('#legen-slopemap-hyogo').style.display = 'none';
+            }
+
+            // 凡例の表示切り替え
+            if (currentLayerName === 'slopemap-tochigi') {
+                // 表示
+                document.querySelector('#legen-slopemap-tochigi').style.display = 'block';
+            }
+            else {
+                // 非表示
+                document.querySelector('#legen-slopemap-tochigi').style.display = 'none';
+            }
+
+            // 凡例の表示切り替え
+            if (currentLayerName === 'slopemap-kochi') {
+                // 表示
+                document.querySelector('#legen-slopemap-kochi').style.display = 'block';
+            }
+            else {
+                // 非表示
+                document.querySelector('#legen-slopemap-kochi').style.display = 'none';
+            }
+
+            // 不透明度の初期表示
+            // valueプロパティを直接変更する
+            tilessliderOpactiyValue.textContent = '100%';
+            tilessliderOpactiy.value = "100";
+
+            photosliderOpactiyValue.textContent = '0%';
+            photosliderOpactiy.value = "0";
+
+        };
+
+        // 樹種ポリゴンポップアップ表示関数
+        function jusyupolygon_showPopup(layerName, e) {
+            var lng = e.lngLat.lng;
+            var lat = e.lngLat.lat;
+            var kaisekijusyu_id = e.features[0].properties['解析樹種ID'];
+            var kaisekijusyu = e.features[0].properties['解析樹種'];
+            var jusyu_id = e.features[0].properties['樹種ID'];
+            var jusyu = e.features[0].properties['樹種'];
+            var menseki_ha = e.features[0].properties['面積_ha'];
+            var shinrinkeisokunen = e.features[0].properties['森林計測年'];
+            var shinrinkeisokuhou = e.features[0].properties['森林計測法'];
+            var pref_code = e.features[0].properties['県code'];
+            var city_code = e.features[0].properties['市町村code'];
+            var id = e.features[0].properties['ID'];
+            var jukankou90 = e.features[0].properties['樹冠高90'];
+            var saidaijukankou = e.features[0].properties['最大樹冠高'];
+            var heikinkeisya = e.features[0].properties['平均傾斜'];
+            var saidaikeisya = e.features[0].properties['最大傾斜'];
+            var kyusichouson = e.features[0].properties['旧市町村名'];
+            var nendo = e.features[0].properties['年度'];
+
+            if (layerName === 'hyogo-tree-specie') {
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(
+                        // 表形式
+                        '<table>' +
+                        '<b>' + '樹種ポリゴン' + '</b>' +
+                        '<tr>' + '<th>' + '項目' + '</th> ' + '<th>' + '値' + '</th> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種ID' + '</td> ' + '<td>' + kaisekijusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種' + '</td> ' + '<td>' + kaisekijusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種ID' + '</td> ' + '<td>' + jusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種' + '</td> ' + '<td>' + jusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '面積_ha' + '</td> ' + '<td>' + menseki_ha + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測年' + '</td> ' + '<td>' + shinrinkeisokunen + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測法' + '</td> ' + '<td>' + shinrinkeisokuhou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '県code' + '</td> ' + '<td>' + pref_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '市町村code' + '</td> ' + '<td>' + city_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'ID' + '</td> ' + '<td>' + id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹冠高90' + '</td> ' + '<td>' + jukankou90 + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最大樹冠高' + '</td> ' + '<td>' + saidaijukankou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均傾斜' + '</td> ' + '<td>' + heikinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最大傾斜' + '</td> ' + '<td>' + saidaikeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '旧市町村名' + '</td> ' + '<td>' + kyusichouson + '</td> ' + '</tr>' +
+                        '<table>'
+                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br>※クリック位置の座標<br>'
+                        + '<a href=\https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja' target='_blank'>🌎Google Maps</a>" + ' '
+                        + '<a href=\https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + lat + "," + lng + "&hl=ja' target='_blank'>📷Street View</a>"
+                    )
+                    .addTo(map);
+            } else if (layerName === 'kochi-tree-specie') {
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(
+                        // 表形式
+                        '<table>' +
+                        '<b>' + '樹種ポリゴン' + '</b>' +
+                        '<tr>' + '<th>' + '項目' + '</th> ' + '<th>' + '値' + '</th> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種ID' + '</td> ' + '<td>' + kaisekijusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種' + '</td> ' + '<td>' + kaisekijusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種' + '</td> ' + '<td>' + jusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測年' + '</td> ' + '<td>' + shinrinkeisokunen + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測法' + '</td> ' + '<td>' + shinrinkeisokuhou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '県code' + '</td> ' + '<td>' + pref_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '市町村code' + '</td> ' + '<td>' + city_code + '</td> ' + '</tr>' +
+                        '<table>'
+                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br>※クリック位置の座標<br>'
+                        + '<a href=\https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja' target='_blank'>🌎Google Maps</a>" + ' '
+                        + '<a href=\https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + lat + "," + lng + "&hl=ja' target='_blank'>📷Street View</a>"
+                    )
+                    .addTo(map);
+            } else if (layerName === 'tochigi-tree-specie') {
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(
+                        // 表形式
+                        '<table>' +
+                        '<b>' + '樹種ポリゴン' + '</b>' +
+                        '<tr>' + '<th>' + '項目' + '</th> ' + '<th>' + '値' + '</th> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種ID' + '</td> ' + '<td>' + kaisekijusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種' + '</td> ' + '<td>' + kaisekijusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種ID' + '</td> ' + '<td>' + jusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種' + '</td> ' + '<td>' + jusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '面積_ha' + '</td> ' + '<td>' + menseki_ha + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測年' + '</td> ' + '<td>' + shinrinkeisokunen + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測法' + '</td> ' + '<td>' + shinrinkeisokuhou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '県code' + '</td> ' + '<td>' + pref_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '市町村code' + '</td> ' + '<td>' + city_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '年度' + '</td> ' + '<td>' + nendo + '</td> ' + '</tr>' +
+                        '<table>'
+                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br>※クリック位置の座標<br>'
+                        + '<a href=\https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja' target='_blank'>🌎Google Maps</a>" + ' '
+                        + '<a href=\https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + lat + "," + lng + "&hl=ja' target='_blank'>📷Street View</a>"
+                    )
+                    .addTo(map);
+            }
+        }
+
+        // 兵庫県樹種ポリゴンポップアップ表示
+        map.on('click', 'hyogo-tree-specie', jusyupolygon_showPopup.bind(null, 'hyogo-tree-specie'));
+
+        // 栃木県樹種ポリゴンポップアップ表示
+        map.on('click', 'tochigi-tree-specie', jusyupolygon_showPopup.bind(null, 'tochigi-tree-specie'));
+
+        // 高知県樹種ポリゴンポップアップ表示
+        map.on('click', 'kochi-tree-specie', jusyupolygon_showPopup.bind(null, 'kochi-tree-specie'));
+
+        // 森林資源量集計メッシュポップアップ表示関数
+        function shinrinshigenryousyukeimesh_showPopup(layerName, e) {
+            var lng = e.lngLat.lng;
+            var lat = e.lngLat.lat;
+            var kaisekijusyu_id = e.features[0].properties['解析樹種ID'];
+            var kaisekijusyu = e.features[0].properties['解析樹種'];
+            var jusyu_id = e.features[0].properties['樹種ID'];
+            var jusyu = e.features[0].properties['樹種'];
+            var menseki_ha = e.features[0].properties['面積_ha'];
+            var tachigihonsuu = e.features[0].properties['立木本数'];
+            var tachigimitsudo = e.features[0].properties['立木密度'];
+            var heikinjyukou = e.features[0].properties['平均樹高'];
+            var heikinchotukei = e.features[0].properties['平均直径'];
+            var goukeizaiseki = e.features[0].properties['合計材積'];
+            var hazaiseki = e.features[0].properties['ha材積'];
+            var syuryouhiritu = e.features[0].properties['収量比数'];
+            var soutaikankyohi = e.features[0].properties['相対幹距比'];
+            var keijouhi = e.features[0].properties['形状比'];
+            var jyukanchouritu = e.features[0].properties['樹冠長率'];
+            var shinrinkeisokunen = e.features[0].properties['森林計測年'];
+            var shinrinkeisokuhou = e.features[0].properties['森林計測法'];
+            var heikinkeisya = e.features[0].properties['平均傾斜'];
+            var saidaikeisya = e.features[0].properties['最大傾斜'];
+            var saisyoukeisya = e.features[0].properties['最小傾斜'];
+            var saihinkeisya = e.features[0].properties['最頻傾斜'];
+            var pref_code = e.features[0].properties['県code'];
+            var city_code = e.features[0].properties['市町村code'];
+            var id = e.features[0].properties['ID'];
+            var jukankou90 = e.features[0].properties['樹冠高90'];
+            var saidaijukankou = e.features[0].properties['最大樹冠高'];
+            var meshid = e.features[0].properties['メッシュID'];
+            var heikinhyouko = e.features[0].properties['平均標高'];
+            var michikaranokyori = e.features[0].properties['道から距離'];
+            var jukansomitsudo = e.features[0].properties['樹冠疎密度'];
+            var shape_length = e.features[0].properties['Shape_Length'];
+            var shape_area = e.features[0].properties['Shape_Area'];
+
+            if (layerName === 'hyogo-fr-mesh20m') {
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(
+                        // 表形式
+                        '<table>' +
+                        '<b>' + '森林資源量集計メッシュ' + '</b>' +
+                        '<tr>' + '<th>' + '項目' + '</th> ' + '<th>' + '値' + '</th> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種ID' + '</td> ' + '<td>' + kaisekijusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種' + '</td> ' + '<td>' + kaisekijusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種ID' + '</td> ' + '<td>' + jusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種' + '</td> ' + '<td>' + jusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '面積_ha' + '</td> ' + '<td>' + menseki_ha + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '立木本数' + '</td> ' + '<td>' + tachigihonsuu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '立木密度' + '</td> ' + '<td>' + tachigimitsudo + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均樹高' + '</td> ' + '<td>' + heikinjyukou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均直径' + '</td> ' + '<td>' + heikinchotukei + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '合計材積' + '</td> ' + '<td>' + goukeizaiseki + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'ha材積' + '</td> ' + '<td>' + hazaiseki + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '収量比数' + '</td> ' + '<td>' + syuryouhiritu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '相対幹距比' + '</td> ' + '<td>' + soutaikankyohi + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '形状比' + '</td> ' + '<td>' + keijouhi + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹冠長率' + '</td> ' + '<td>' + jyukanchouritu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測年' + '</td> ' + '<td>' + shinrinkeisokunen + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測法' + '</td> ' + '<td>' + shinrinkeisokuhou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均傾斜' + '</td> ' + '<td>' + heikinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最大傾斜' + '</td> ' + '<td>' + saidaikeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最小傾斜' + '</td> ' + '<td>' + saisyoukeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最頻傾斜' + '</td> ' + '<td>' + saihinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '県code' + '</td> ' + '<td>' + pref_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '市町村code' + '</td> ' + '<td>' + city_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'ID' + '</td> ' + '<td>' + id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹冠高90' + '</td> ' + '<td>' + jukankou90 + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最大樹冠高' + '</td> ' + '<td>' + saidaijukankou + '</td> ' + '</tr>' +
+                        '<table>'
+                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br>※クリック位置の座標<br>'
+                        + '<a href=\https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja' target='_blank'>🌎Google Maps</a>" + ' '
+                        + '<a href=\https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + lat + "," + lng + "&hl=ja' target='_blank'>📷Street View</a>"
+                    )
+                    .addTo(map);
+            } else if (layerName === 'kochi-fr-mesh20m') {
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(
+                        // 表形式
+                        '<table>' +
+                        '<b>' + '森林資源量集計メッシュ' + '</b>' +
+                        '<tr>' + '<th>' + '項目' + '</th> ' + '<th>' + '値' + '</th> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種ID' + '</td> ' + '<td>' + kaisekijusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種' + '</td> ' + '<td>' + kaisekijusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種ID' + '</td> ' + '<td>' + jusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種' + '</td> ' + '<td>' + jusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '面積_ha' + '</td> ' + '<td>' + menseki_ha + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '立木本数' + '</td> ' + '<td>' + tachigihonsuu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '立木密度' + '</td> ' + '<td>' + tachigimitsudo + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均樹高' + '</td> ' + '<td>' + heikinjyukou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均直径' + '</td> ' + '<td>' + heikinchotukei + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '合計材積' + '</td> ' + '<td>' + goukeizaiseki + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'ha材積' + '</td> ' + '<td>' + hazaiseki + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '収量比数' + '</td> ' + '<td>' + syuryouhiritu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '相対幹距比' + '</td> ' + '<td>' + soutaikankyohi + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '形状比' + '</td> ' + '<td>' + keijouhi + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹冠長率' + '</td> ' + '<td>' + jyukanchouritu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測年' + '</td> ' + '<td>' + shinrinkeisokunen + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測法' + '</td> ' + '<td>' + shinrinkeisokuhou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均傾斜' + '</td> ' + '<td>' + heikinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最大傾斜' + '</td> ' + '<td>' + saidaikeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最小傾斜' + '</td> ' + '<td>' + saisyoukeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最頻傾斜' + '</td> ' + '<td>' + saihinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '県code' + '</td> ' + '<td>' + pref_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '市町村code' + '</td> ' + '<td>' + city_code + '</td> ' + '</tr>' +
+                        '<table>'
+                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br>※クリック位置の座標<br>'
+                        + '<a href=\https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja' target='_blank'>🌎Google Maps</a>" + ' '
+                        + '<a href=\https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + lat + "," + lng + "&hl=ja' target='_blank'>📷Street View</a>"
+                    )
+                    .addTo(map);
+            } else if (layerName === 'tochigi-fr-mesh20m') {
+                new maplibregl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(
+                        // 表形式
+                        '<table>' +
+                        '<b>' + '森林資源量集計メッシュ' + '</b>' +
+                        '<tr>' + '<th>' + '項目' + '</th> ' + '<th>' + '値' + '</th> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種ID' + '</td> ' + '<td>' + kaisekijusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '解析樹種' + '</td> ' + '<td>' + kaisekijusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種ID' + '</td> ' + '<td>' + jusyu_id + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹種' + '</td> ' + '<td>' + jusyu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '面積_ha' + '</td> ' + '<td>' + menseki_ha + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '立木本数' + '</td> ' + '<td>' + tachigihonsuu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '立木密度' + '</td> ' + '<td>' + tachigimitsudo + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均樹高' + '</td> ' + '<td>' + heikinjyukou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均直径' + '</td> ' + '<td>' + heikinchotukei + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '合計材積' + '</td> ' + '<td>' + goukeizaiseki + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'ha材積' + '</td> ' + '<td>' + hazaiseki + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '収量比数' + '</td> ' + '<td>' + syuryouhiritu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '相対幹距比' + '</td> ' + '<td>' + soutaikankyohi + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '形状比' + '</td> ' + '<td>' + keijouhi + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹冠長率' + '</td> ' + '<td>' + jyukanchouritu + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測年' + '</td> ' + '<td>' + shinrinkeisokunen + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '森林計測法' + '</td> ' + '<td>' + shinrinkeisokuhou + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均傾斜' + '</td> ' + '<td>' + heikinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最大傾斜' + '</td> ' + '<td>' + saidaikeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最小傾斜' + '</td> ' + '<td>' + saisyoukeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '最頻傾斜' + '</td> ' + '<td>' + saihinkeisya + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '県code' + '</td> ' + '<td>' + pref_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '市町村code' + '</td> ' + '<td>' + city_code + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'メッシュID' + '</td> ' + '<td>' + meshid + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '平均標高' + '</td> ' + '<td>' + heikinhyouko + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '道から距離' + '</td> ' + '<td>' + michikaranokyori + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + '樹冠疎密度' + '</td> ' + '<td>' + jukansomitsudo + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'Shape_Length' + '</td> ' + '<td>' + shape_length + '</td> ' + '</tr>' +
+                        '<tr>' + '<td>' + 'Shape_Area' + '</td> ' + '<td>' + shape_area + '</td> ' + '</tr>' +
+                        '<table>'
+                        + '座標: ' + lat.toFixed(7) + "," + lng.toFixed(7) + '<br>※クリック位置の座標<br>'
+                        + '<a href=\https://www.google.com/maps?q=' + lat + "," + lng + "&hl=ja' target='_blank'>🌎Google Maps</a>" + ' '
+                        + '<a href=\https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + lat + "," + lng + "&hl=ja' target='_blank'>📷Street View</a>"
+                    )
+                    .addTo(map);
+            }
+        }
+
+        // 森林資源量集計メッシュポップアップ表示
+        map.on('click', 'hyogo-fr-mesh20m', shinrinshigenryousyukeimesh_showPopup.bind(null, 'hyogo-fr-mesh20m'));
+
+        // 森林資源量集計メッシュポップアップ表示
+        map.on('click', 'kochi-fr-mesh20m', shinrinshigenryousyukeimesh_showPopup.bind(null, 'kochi-fr-mesh20m'));
+
+        // 森林資源量集計メッシュポップアップ表示
+        map.on('click', 'tochigi-fr-mesh20m', shinrinshigenryousyukeimesh_showPopup.bind(null, 'tochigi-fr-mesh20m'));
+
+        // addProtocolを設定
+        maplibregl.addProtocol('numpng', makeNumPngProtocol());
+
+    </script>
+</body>
+
+</html>
